@@ -1,0 +1,3 @@
+FundQuant Pro (Ultimate AI Edition)全功能量化基金分析终端，具备自研 Smart-Beta 算法引擎与 LLM 自动迭代能力。🌟 特性AI 核心: 集成自研算法，支持通过 SiliconFlow/OpenAI API 进行因子自我迭代。全市场模拟: 内置 300+ 基金数据结构，模拟真实市场环境。高级图表: 支持 High/Low 标记与多周期 (1M/3M/1Y) 切换。本地优先: 数据存储在本地（模拟 SQLite/JSON），保护隐私。模块化: 完整的 React + Vite 工程结构，适合二次开发。🛠️ 安装与运行本地开发安装依赖: npm install启动服务: npm run dev访问: http://localhost:5173Docker 部署构建镜像:docker build -t fund-quant-pro .
+运行容器:docker run -d -p 8080:80 --name fund-quant fund-quant-pro
+访问: http://localhost:8080🧩 项目结构src/data: 模拟数据库层 (Top 300 Funds)src/services: 核心算法引擎 (ValuationEngine)src/context: 全局状态管理src/views: 页面视图组件🤖 AI 配置在 设置 -> AI 核心配置 中输入您的 API Key (如 DeepSeek/SiliconFlow) 即可开启算法自动迭代功能。
