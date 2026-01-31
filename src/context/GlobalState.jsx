@@ -6,61 +6,56 @@ import { ValuationEngine } from '../services/ValuationEngine';
 const AppContext = createContext();
 const engine = new ValuationEngine();
 
-// ... isTradingTime 函数保持不变 ...
-const isTradingTime = () => { return true; }; // 简化测试
-
 export const GlobalProvider = ({ children }) => {
-  // ... state 定义保持不变 ...
-  const [fundList, setFundList] = useState([]);
+  const [fundList, setFundList] = useState([]); // 初始为空
   const [liveData, setLiveData] = useState({});
   const [holdingsCache, setHoldingsCache] = useState({});
+  const [marketStatus, setMarketStatus] = useState('idle');
+
   const [portfolio, setPortfolio] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  
   const [systemOnline, setSystemOnline] = useState(true);
   const [valuationMode, setValuationMode] = useState('source');
-  const [marketStatus, setMarketStatus] = useState('idle');
-  
-  // AI Config State
   const [aiConfig, setAiConfig] = useState({
     baseUrl: "https://api.siliconflow.cn/v1",
     apiKey: "",
     modelName: "deepseek-ai/deepseek-vl-chat",
-    systemPrompt: "你是一个金融量化专家。" // 默认 Prompt
+    systemPrompt: "你是一个金融量化专家。"
   });
 
   const timerRef = useRef(null);
 
-  // 1. 初始化加载
   useEffect(() => {
+    // 1. 加载用户数据
     const userData = dataManager.getUserData();
     if (userData) {
       setPortfolio(userData.portfolio || []);
       setWatchlist(userData.watchlist || []);
       setTransactions(userData.transactions || []);
-      // 加载保存的 AI 配置
-      if (userData.aiConfig) {
-        setAiConfig(prev => ({ ...prev, ...userData.aiConfig }));
-      }
+      if(userData.aiConfig) setAiConfig(prev => ({...prev, ...userData.aiConfig}));
     }
 
+    // 2. 加载热门基金 (Tencent Pool)
     const initHotFunds = async () => {
       setMarketStatus('loading');
       try {
         const hot = await marketService.getHotFunds();
-        setFundList(hot.length ? hot : []);
+        setFundList(hot);
         setMarketStatus(hot.length ? 'success' : 'error');
-      } catch (e) { setMarketStatus('error'); }
+      } catch (e) {
+        setMarketStatus('error');
+      }
     };
     initHotFunds();
   }, []);
 
-  // 2. 数据持久化 (包含 aiConfig)
+  // ... (其他逻辑如 useEffect 保存数据, searchAndAddFunds, handleTrade 等保持不变) ...
   useEffect(() => {
     dataManager.saveUserData({ portfolio, watchlist, transactions, aiConfig });
   }, [portfolio, watchlist, transactions, aiConfig]);
 
-  // ... 其余逻辑 (useEffect, handleTrade) 保持不变 ...
   useEffect(() => { engine.setMode(valuationMode); }, [valuationMode]);
 
   const searchAndAddFunds = async (keyword) => {
@@ -75,11 +70,12 @@ export const GlobalProvider = ({ children }) => {
 
   const fetchMarketData = async () => {
     if (!systemOnline) return;
-    const activeCodes = [...new Set([...portfolio.map(p=>p.code), ...watchlist, ...fundList.slice(0,10).map(f=>f.code)])];
+    const activeCodes = [...new Set([...portfolio.map(p=>p.code), ...watchlist, ...fundList.map(f=>f.code)])];
     if (activeCodes.length === 0) return;
 
     const updates = {};
-    const batchSize = 5;
+    // 批量处理
+    const batchSize = 10;
     for (let i = 0; i < activeCodes.length; i += batchSize) {
       const batch = activeCodes.slice(i, i + batchSize);
       await Promise.all(batch.map(async (code) => {
@@ -87,32 +83,47 @@ export const GlobalProvider = ({ children }) => {
         if (valuationMode === 'source') {
           realData = await marketService.getFundRealtime(code);
         }
-        // 如果是 algo 模式，或者 source 模式失败，尝试用引擎
-        if (!realData && valuationMode === 'source') {
-           // 这里可以增加逻辑：如果 source 失败，自动切换 algo 逻辑进行估算
-           // 但目前为了简单，只在 algo 模式下启用引擎
-        }
-        // 如果是 Algo 模式，这里调用 engine.calculate ... (略，复用之前逻辑)
-        
         if (realData) updates[code] = realData;
       }));
     }
-    if(Object.keys(updates).length) setLiveData(prev => ({...prev, ...updates}));
+    if(Object.keys(updates).length > 0) setLiveData(prev => ({...prev, ...updates}));
   };
 
-  // 定时器
   useEffect(() => {
     fetchMarketData();
     const scheduleNext = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      const interval = (isTradingTime() && systemOnline) ? 60000 : 3600000;
+      const interval = 60000; // 统一1分钟
       timerRef.current = setTimeout(() => { fetchMarketData().then(scheduleNext); }, interval);
     };
     scheduleNext();
     return () => clearTimeout(timerRef.current);
   }, [systemOnline, portfolio, watchlist, fundList, valuationMode]);
 
-  const handleTrade = (code, type, amount, price) => { /* ... Keep trade logic ... */ };
+  const handleTrade = (code, type, amount, price) => { /* ...保持原样... */ 
+    const val = parseFloat(amount);
+    const nav = parseFloat(price);
+    if (!val || !nav) return;
+    setPortfolio(prev => {
+      const exist = prev.find(p => p.code === code);
+      const shares = val / nav;
+      if (type === 'buy') {
+        if (exist) {
+          const newShares = exist.totalShares + shares;
+          const newCost = exist.totalCost + val;
+          return prev.map(p => p.code === code ? { ...p, totalShares: newShares, totalCost: newCost, avgCost: newCost/newShares } : p);
+        }
+        return [...prev, { code, totalShares: shares, totalCost: val, avgCost: nav }];
+      } else {
+        if (!exist) return prev;
+        const totalShares = exist.totalShares - shares;
+        const costPart = exist.avgCost * shares;
+        if (totalShares < 0.01) return prev.filter(p => p.code !== code);
+        return prev.map(p => p.code === code ? { ...p, totalShares, totalCost: exist.totalCost - costPart } : p);
+      }
+    });
+    setTransactions(prev => [...prev, { id: Date.now(), date: new Date().toISOString(), code, type, amount: val, price: nav, shares: val/nav }]);
+  };
 
   return (
     <AppContext.Provider value={{

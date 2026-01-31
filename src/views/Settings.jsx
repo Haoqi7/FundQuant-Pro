@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, GitMerge, RefreshCw, BrainCircuit, HardDrive, Download, Database, Globe, CheckCircle, XCircle, Save, Disc, Activity } from 'lucide-react';
+import { Zap, GitMerge, RefreshCw, BrainCircuit, HardDrive, Download, Database, Globe, CheckCircle, XCircle, Save, Disc } from 'lucide-react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useGlobal } from '../context/GlobalState';
 import { dataManager } from '../data/DataManager';
@@ -10,7 +10,7 @@ export default function Settings() {
   const [iterating, setIterating] = useState(false);
   const [logs, setLogs] = useState([]);
   const [storageMode, setStorageMode] = useState(dataManager.getStorageMode());
-  const [diagStatus, setDiagStatus] = useState({ search: 'idle', rank: 'idle', quote: 'idle' });
+  const [diagStatus, setDiagStatus] = useState({ search: 'idle', pool: 'idle', quote: 'idle' });
   const [tempAiConfig, setTempAiConfig] = useState(aiConfig);
 
   useEffect(() => { setTempAiConfig(aiConfig); }, [aiConfig]);
@@ -27,28 +27,28 @@ export default function Settings() {
   };
 
   const runNetworkTest = async () => {
-    setDiagStatus({ search: 'loading', rank: 'loading', quote: 'loading' });
+    setDiagStatus({ search: 'loading', pool: 'loading', quote: 'loading' });
     
-    // 1. 测试搜索 (HTTPS)
+    // 1. 搜索 (EastMoney)
     try {
       const s = await marketService.searchFund('000001');
       setDiagStatus(prev => ({ ...prev, search: s.length > 0 ? 'success' : 'error' }));
     } catch { setDiagStatus(prev => ({ ...prev, search: 'error' })); }
 
-    // 2. 测试排行榜 (HTTPS)
+    // 2. 热门池 (Tencent)
     try {
       const r = await marketService.getHotFunds();
-      setDiagStatus(prev => ({ ...prev, rank: r.length > 0 ? 'success' : 'error' }));
-    } catch { setDiagStatus(prev => ({ ...prev, rank: 'error' })); }
+      setDiagStatus(prev => ({ ...prev, pool: r.length > 0 ? 'success' : 'error' }));
+    } catch { setDiagStatus(prev => ({ ...prev, pool: 'error' })); }
 
-    // 3. 测试实时行情 (HTTPS)
+    // 3. 实时 (Tencent)
     try {
       const q = await marketService.getFundRealtime('005827');
       setDiagStatus(prev => ({ ...prev, quote: q ? 'success' : 'error' }));
     } catch { setDiagStatus(prev => ({ ...prev, quote: 'error' })); }
   };
 
-  const triggerAiIteration = async () => {
+  const triggerAiIteration = async () => { /* 保持不变 */ 
     if (!aiConfig.apiKey) return alert("请先配置 API Key");
     setIterating(true);
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] 连接 AI...`, ...prev]);
@@ -75,20 +75,20 @@ export default function Settings() {
   return (
     <div className="space-y-6 pb-24 animate-fade-in">
       
-      {/* API 诊断面板 */}
+      {/* 1. API 诊断 */}
       <GlassCard className="p-4">
         <h3 className="font-bold flex items-center gap-2 mb-3 text-slate-800 dark:text-white text-sm">
-          <Globe size={16} className="text-blue-500"/> API 连接诊断 (HTTPS)
+          <Globe size={16} className="text-blue-500"/> API 连接诊断 (Tencent/EM)
         </h3>
         <div className="grid grid-cols-3 gap-2">
-          <StatusItem label="Search" status={diagStatus.search}/>
-          <StatusItem label="Rank" status={diagStatus.rank}/>
-          <StatusItem label="Quote" status={diagStatus.quote}/>
+          <StatusItem label="Search (EM)" status={diagStatus.search}/>
+          <StatusItem label="Hot Pool (TX)" status={diagStatus.pool}/>
+          <StatusItem label="Quote (TX)" status={diagStatus.quote}/>
         </div>
         <button onClick={runNetworkTest} className="w-full mt-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-lg text-xs hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">开始检测</button>
       </GlassCard>
 
-      {/* AI 配置 */}
+      {/* 2. AI 配置 */}
       <GlassCard className="p-4">
         <div className="flex justify-between items-center mb-4">
            <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white text-sm">
@@ -123,35 +123,29 @@ export default function Settings() {
         </div>
       </GlassCard>
 
-      {/* 算法模式 */}
+      {/* 3. 算法模式 & 存储 (保持不变) */}
       <GlassCard className="p-4">
-        <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-800 dark:text-white text-sm">
-          <GitMerge size={16} className="text-purple-500"/> 估值模式
-        </h3>
+        <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-800 dark:text-white text-sm"><GitMerge size={16} className="text-purple-500"/> 估值模式</h3>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
-           <button onClick={() => setValuationMode('source')} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${valuationMode === 'source' ? 'bg-white dark:bg-slate-700 shadow text-blue-600' : 'text-slate-500'}`}>API 直连</button>
+           <button onClick={() => setValuationMode('source')} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${valuationMode === 'source' ? 'bg-white dark:bg-slate-700 shadow text-blue-600' : 'text-slate-500'}`}>腾讯源直连</button>
            <button onClick={() => setValuationMode('algo')} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${valuationMode === 'algo' ? 'bg-white dark:bg-slate-700 shadow text-purple-600' : 'text-slate-500'}`}>AI 自研算法</button>
         </div>
-
         {valuationMode === 'algo' && (
           <div className="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800/30 rounded-xl p-4">
             <button onClick={triggerAiIteration} disabled={iterating} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50">
               {iterating ? <RefreshCw className="animate-spin" size={14}/> : <BrainCircuit size={14}/>}
-              {iterating ? "正在迭代..." : "触发 AI 算法自我迭代"}
+              {iterating ? "迭代优化中..." : "触发 AI 算法自我迭代"}
             </button>
             <div className="mt-3 bg-black/5 dark:bg-black/30 rounded-lg p-2 h-20 overflow-y-auto font-mono text-[9px] text-slate-500">
-              {logs.length === 0 ? "等待指令..." : logs.map((l,i) => <div key={i}>{l}</div>)}
+              {logs.length === 0 ? "系统就绪" : logs.map((l,i) => <div key={i}>{l}</div>)}
             </div>
           </div>
         )}
       </GlassCard>
 
-      {/* 存储 */}
       <GlassCard className="p-4">
         <div className="flex items-center justify-between mb-4">
-           <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white text-sm">
-             <HardDrive size={16} className="text-emerald-500"/> 数据存储
-           </h3>
+           <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white text-sm"><HardDrive size={16} className="text-emerald-500"/> 数据存储</h3>
            <div className="flex bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg">
              <button onClick={() => handleStorageSwitch('data')} className={`px-2 py-1 rounded text-[10px] ${storageMode === 'data' ? 'bg-white dark:bg-slate-700 shadow' : 'text-slate-400'}`}>Data</button>
              <button onClick={() => handleStorageSwitch('browser')} className={`px-2 py-1 rounded text-[10px] ${storageMode === 'browser' ? 'bg-white dark:bg-slate-700 shadow' : 'text-slate-400'}`}>Browser</button>
@@ -159,12 +153,10 @@ export default function Settings() {
         </div>
         <div className="grid grid-cols-2 gap-3">
            <button onClick={() => dataManager.exportFile('algo')} className="flex flex-col items-center justify-center p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-purple-500 transition-colors">
-              <Database size={20} className="text-purple-500 mb-1"/>
-              <span className="text-[10px] font-bold text-slate-500">导出算法数据</span>
+              <Database size={20} className="text-purple-500 mb-1"/><span className="text-[10px] font-bold text-slate-500">算法数据</span>
            </button>
            <button onClick={() => dataManager.exportFile('user')} className="flex flex-col items-center justify-center p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors">
-              <Download size={20} className="text-blue-500 mb-1"/>
-              <span className="text-[10px] font-bold text-slate-500">导出用户数据</span>
+              <Download size={20} className="text-blue-500 mb-1"/><span className="text-[10px] font-bold text-slate-500">用户数据</span>
            </button>
         </div>
       </GlassCard>
