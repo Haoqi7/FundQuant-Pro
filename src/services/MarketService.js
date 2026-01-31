@@ -1,46 +1,62 @@
 /**
- * MarketService V9.0 (Search Fix)
- * 修复搜索问题：引入腾讯 Smartbox 接口作为主搜索源
+ * MarketService V9.1 (Search Fixed)
+ * 修复 JSONP 参数拼接 Bug，新增新浪搜索作为三重灾备
  */
 
 const jsonp = (url, callbackName) => {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    const name = callbackName || `jsonp_${Date.now()}`;
-    if (url.indexOf('callback=') === -1 && !callbackName) {
+    // 如果没有提供名字，生成随机名；提供了则使用提供的名字
+    const name = callbackName || `jsonp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    
+    // [关键修复] 无论 callbackName 是否存在，都要确保 URL 里包含 callback=xxx
+    if (url.indexOf('callback=') === -1) {
         url += (url.indexOf('?') === -1 ? '?' : '&') + `callback=${name}`;
     }
+
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error("Timeout"));
+      reject(new Error(`Timeout: ${url}`));
     }, 5000);
+
     const cleanup = () => {
       if (script.parentNode) script.parentNode.removeChild(script);
+      // 只有自动生成的随机回调才清理，固定回调(如FundSearchCallback)保留以防复用
       if (!callbackName) window[name] = undefined; 
       clearTimeout(timeout);
     };
-    if (!window[name]) {
-        window[name] = (data) => { cleanup(); resolve(data); };
-    }
+
+    // 如果是固定回调名，可能已经被定义过，需要防冲突处理或复用
+    // 这里简单处理：重新挂载/覆盖 promise resolver
+    window[name] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
     script.src = url;
-    script.onerror = () => { cleanup(); reject(new Error("Network Error")); };
+    script.onerror = () => {
+      cleanup();
+      reject(new Error(`Network Error: ${url}`));
+    };
+    
     document.head.appendChild(script);
   });
 };
 
 export class MarketService {
   
-  /**
-   * 1. 实时估值 (腾讯)
-   */
+  // --- 1. 实时估值 (腾讯 HTTPS) ---
   getFundRealtime(code) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = `https://qt.gtimg.cn/q=jj${code}`;
+      
       script.onload = () => {
         const varName = `v_jj${code}`;
         const dataStr = window[varName];
         document.head.removeChild(script);
+        window[varName] = undefined; // 清理
+        
         if (dataStr) {
           const p = dataStr.split('~');
           const name = p[1];
@@ -61,31 +77,35 @@ export class MarketService {
           resolve(null);
         }
       };
+      
       script.onerror = () => {
-        document.head.removeChild(script);
+        if(script.parentNode) document.head.removeChild(script);
         resolve(null);
       };
+      
       document.head.appendChild(script);
     });
   }
 
-  /**
-   * 2. 搜索 (双源灾备：腾讯优先 -> 东财兜底)
-   */
+  // --- 2. 搜索 (三重灾备策略) ---
   async searchFund(keyword) {
     if (!keyword) return [];
 
-    // 策略 A: 腾讯 Smartbox (极速、HTTPS、稳定)
+    // Plan A: 腾讯 Smartbox
     try {
-      const results = await this._searchTencent(keyword);
-      if (results && results.length > 0) return results;
-    } catch (e) {
-      // console.warn("Tencent search failed, fallback to EM", e);
-    }
+      const res = await this._searchTencent(keyword);
+      if (res.length > 0) return res;
+    } catch (e) { /* continue */ }
 
-    // 策略 B: 东方财富 (原接口，作为备用)
+    // Plan B: 东方财富 FundSuggest (之前失效是因为 jsonp 函数 bug)
     try {
-      return await this._searchEastMoney(keyword);
+      const res = await this._searchEastMoney(keyword);
+      if (res.length > 0) return res;
+    } catch (e) { /* continue */ }
+
+    // Plan C: 新浪财经 Suggest (新增)
+    try {
+      return await this._searchSina(keyword);
     } catch (e) {
       console.error("All search sources failed");
       return [];
@@ -95,64 +115,80 @@ export class MarketService {
   _searchTencent(keyword) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      // t=fund 指定搜索基金
       script.src = `https://smartbox.gtimg.cn/s3/?t=fund&q=${encodeURIComponent(keyword)}`;
       
       script.onload = () => {
-        // 腾讯返回全局变量 v_hint
         const dataStr = window.v_hint;
-        // 清理
         document.head.removeChild(script);
-        window.v_hint = undefined;
+        window.v_hint = undefined; // 清理
 
         if (dataStr) {
-          // 格式: "code~name~type~...^code~name~..."
-          // 例: "000001~华夏成长混合~HQ~...^..."
           const list = dataStr.split('^').map(item => {
             const parts = item.split('~');
             if (parts.length < 2) return null;
-            return {
-              code: parts[0],
-              name: parts[1],
-              type: '基金', // 腾讯简版不带详细类型
-              sector: '综合'
-            };
-          }).filter(Boolean); // 过滤空值
+            return { code: parts[0], name: parts[1], type: '基金', sector: '综合' };
+          }).filter(Boolean);
           resolve(list);
         } else {
-          resolve([]); // 没搜到
+          resolve([]); 
         }
       };
-
-      script.onerror = () => {
-        document.head.removeChild(script);
-        reject(new Error("Tencent Search Error"));
+      script.onerror = () => { 
+        if(script.parentNode) document.head.removeChild(script); 
+        reject(); 
       };
-      
       document.head.appendChild(script);
     });
   }
 
   _searchEastMoney(keyword) {
+    // 关键：URL 里不要自己带 callback，让 jsonp 函数去加
     const url = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}`;
+    // 指定回调名 FundSearchCallback，因为该接口不支持随机回调名
     return jsonp(url, 'FundSearchCallback').then(data => {
       if (data?.Datas) {
-        return data.Datas.map(i => ({ 
-          code: i.CODE, 
-          name: i.NAME, 
-          type: '基金', 
-          sector: '综合' 
-        }));
+        return data.Datas.map(i => ({ code: i.CODE, name: i.NAME, type: '基金', sector: '综合' }));
       }
       return [];
     });
   }
 
-  /**
-   * 3. 热门排行榜 (实时池)
-   */
+  _searchSina(keyword) {
+    return new Promise((resolve, reject) => {
+      const varName = `sug_fund_${Date.now()}`;
+      const script = document.createElement('script');
+      // type=11 代表基金
+      script.src = `https://suggest3.sinajs.cn/suggest/type=11&key=${encodeURIComponent(keyword)}&name=${varName}`;
+      script.charset = 'gb2312'; // 新浪必需
+
+      script.onload = () => {
+        const str = window[varName];
+        document.head.removeChild(script);
+        window[varName] = undefined;
+
+        if (str) {
+          // 格式: "代码1,名称1,拼音1...;代码2,名称2,..."
+          const items = str.split(';');
+          const list = items.map(item => {
+            const parts = item.split(',');
+            if (parts.length < 4) return null;
+            return { code: parts[2], name: parts[4], type: '基金', sector: '综合' };
+          }).filter(Boolean);
+          resolve(list);
+        } else {
+          resolve([]);
+        }
+      };
+      script.onerror = () => {
+        if(script.parentNode) document.head.removeChild(script); 
+        reject();
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  // --- 3. 热门排行榜 (Tencent Pool) ---
   async getHotFunds() {
-    // 核心热门池
     const HOT_POOL = [
       { c: "012349", n: "天弘恒生科技" }, { c: "005827", n: "易方达蓝筹" },
       { c: "161725", n: "招商中证白酒" }, { c: "001156", n: "申万新能源" },
@@ -195,16 +231,14 @@ export class MarketService {
             resolve(results);
         };
         script.onerror = () => {
-            document.head.removeChild(script);
+            if(script.parentNode) document.head.removeChild(script);
             resolve([]); 
         };
         document.head.appendChild(script);
     });
   }
 
-  /**
-   * 4. 持仓 (腾讯)
-   */
+  // --- 4. 持仓 (Tencent) ---
   async getFundHoldings(code) {
     try {
       const codes = await this.fetchPingZhongData(code);
@@ -261,7 +295,7 @@ export class MarketService {
         resolve(results);
       };
       script.onerror = () => {
-        document.head.removeChild(script);
+        if(script.parentNode) document.head.removeChild(script);
         resolve([]);
       };
       document.head.appendChild(script);
