@@ -29,26 +29,26 @@ export default function Settings() {
   const runNetworkTest = async () => {
     setDiagStatus({ search: 'loading', pool: 'loading', quote: 'loading' });
     
-    // 1. 搜索 (EastMoney)
+    // 1. 测试搜索 (Tencent Primary)
     try {
       const s = await marketService.searchFund('000001');
       setDiagStatus(prev => ({ ...prev, search: s.length > 0 ? 'success' : 'error' }));
     } catch { setDiagStatus(prev => ({ ...prev, search: 'error' })); }
 
-    // 2. 热门池 (Tencent)
+    // 2. 测试热门池 (Tencent)
     try {
       const r = await marketService.getHotFunds();
       setDiagStatus(prev => ({ ...prev, pool: r.length > 0 ? 'success' : 'error' }));
     } catch { setDiagStatus(prev => ({ ...prev, pool: 'error' })); }
 
-    // 3. 实时 (Tencent)
+    // 3. 测试实时 (Tencent)
     try {
       const q = await marketService.getFundRealtime('005827');
       setDiagStatus(prev => ({ ...prev, quote: q ? 'success' : 'error' }));
     } catch { setDiagStatus(prev => ({ ...prev, quote: 'error' })); }
   };
 
-  const triggerAiIteration = async () => { /* 保持不变 */ 
+  const triggerAiIteration = async () => {
     if (!aiConfig.apiKey) return alert("请先配置 API Key");
     setIterating(true);
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] 连接 AI...`, ...prev]);
@@ -78,10 +78,10 @@ export default function Settings() {
       {/* 1. API 诊断 */}
       <GlassCard className="p-4">
         <h3 className="font-bold flex items-center gap-2 mb-3 text-slate-800 dark:text-white text-sm">
-          <Globe size={16} className="text-blue-500"/> API 连接诊断 (Tencent/EM)
+          <Globe size={16} className="text-blue-500"/> API 连接诊断 (Tencent First)
         </h3>
         <div className="grid grid-cols-3 gap-2">
-          <StatusItem label="Search (EM)" status={diagStatus.search}/>
+          <StatusItem label="Search (TX/EM)" status={diagStatus.search}/>
           <StatusItem label="Hot Pool (TX)" status={diagStatus.pool}/>
           <StatusItem label="Quote (TX)" status={diagStatus.quote}/>
         </div>
@@ -123,11 +123,13 @@ export default function Settings() {
         </div>
       </GlassCard>
 
-      {/* 3. 算法模式 & 存储 (保持不变) */}
+      {/* 3. 算法模式 */}
       <GlassCard className="p-4">
-        <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-800 dark:text-white text-sm"><GitMerge size={16} className="text-purple-500"/> 估值模式</h3>
+        <h3 className="font-bold flex items-center gap-2 mb-4 text-slate-800 dark:text-white text-sm">
+          <GitMerge size={16} className="text-purple-500"/> 估值模式
+        </h3>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
-           <button onClick={() => setValuationMode('source')} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${valuationMode === 'source' ? 'bg-white dark:bg-slate-700 shadow text-blue-600' : 'text-slate-500'}`}>腾讯源直连</button>
+           <button onClick={() => setValuationMode('source')} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${valuationMode === 'source' ? 'bg-white dark:bg-slate-700 shadow text-blue-600' : 'text-slate-500'}`}>API 直连</button>
            <button onClick={() => setValuationMode('algo')} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${valuationMode === 'algo' ? 'bg-white dark:bg-slate-700 shadow text-purple-600' : 'text-slate-500'}`}>AI 自研算法</button>
         </div>
         {valuationMode === 'algo' && (
@@ -143,9 +145,12 @@ export default function Settings() {
         )}
       </GlassCard>
 
+      {/* 4. 数据存储 */}
       <GlassCard className="p-4">
         <div className="flex items-center justify-between mb-4">
-           <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white text-sm"><HardDrive size={16} className="text-emerald-500"/> 数据存储</h3>
+           <h3 className="font-bold flex items-center gap-2 text-slate-800 dark:text-white text-sm">
+             <HardDrive size={16} className="text-emerald-500"/> 数据存储
+           </h3>
            <div className="flex bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg">
              <button onClick={() => handleStorageSwitch('data')} className={`px-2 py-1 rounded text-[10px] ${storageMode === 'data' ? 'bg-white dark:bg-slate-700 shadow' : 'text-slate-400'}`}>Data</button>
              <button onClick={() => handleStorageSwitch('browser')} className={`px-2 py-1 rounded text-[10px] ${storageMode === 'browser' ? 'bg-white dark:bg-slate-700 shadow' : 'text-slate-400'}`}>Browser</button>
